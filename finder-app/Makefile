@@ -1,5 +1,10 @@
-all:
-	$(CROSS_COMPILE)gcc -g -Wall -c -o writer.o writer.c
-	$(CROSS_COMPILE)gcc -g -Wall -I/ writer.o -o writer
+
+writer:
+ifdef CROSS_COMPILE
+	$(CROSS_COMPILE)gcc -o writer writer.c
+else
+	gcc -o writer writer.c
+endif
 clean:
-	rm -f *.o writer *.elf *.map
+	$(RM) writer.o writer
+

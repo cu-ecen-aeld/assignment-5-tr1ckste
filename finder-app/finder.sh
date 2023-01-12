@@ -1,16 +1,12 @@
-#!/bin/bash
-if [ $# != 2 ]; then
-    echo "2 parameters expected"
-    exit 1
-fi
+#!/bin/sh
+
 filesdir=$1
 searchstr=$2
-if [ ! -d $filesdir ]; then
-    echo "$filesdir is not a directory"
-    exit 1
+
+if [ $# -ne 2 ] || [ ! -d $1 ]
+then
+	echo 1
+else
+	echo "The number of files are $(find "$1" -type f | wc -l) and the number of matching lines are $( find "$1" -type f -exec grep -r $2 {} \; | wc -l )"
 fi
 
-linesNumber=$(grep -r $searchstr $filesdir | wc -l)
-filesNumber=$(grep -lr $searchstr $filesdir | wc -l)
-echo "The number of files are $filesNumber and the number of matching lines are $linesNumber"
-exit 0

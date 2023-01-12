@@ -1,12 +1,13 @@
-#include <errno.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include "systemcalls.h"
-
+#include <stdlib.h>
+#include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <syslog.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -14,6 +15,7 @@
  *   either in invocation of the system() call, or if a non-zero return
  *   value was returned by the command issued in @param cmd.
 */
+
 bool do_system(const char *cmd)
 {
 
@@ -23,8 +25,10 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return system(cmd) == 0;
+	int rc =system(cmd);
+	if (rc != 0)
+		return false;
+    return true;
 }
 
 /**
@@ -44,6 +48,7 @@ bool do_system(const char *cmd)
 bool do_exec(int count, ...)
 {
     va_list args;
+    openlog(NULL, 0, LOG_USER);
     va_start(args, count);
     char * command[count+1];
     int i;
@@ -56,7 +61,8 @@ bool do_exec(int count, ...)
     // and may be removed
     command[count] = command[count];
 
-    va_end(args);
+   
+ 
 
 /*
  * TODO:
@@ -67,30 +73,26 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-    pid_t pid = fork();
-    if (pid == -1) {
-        fprintf(stderr, "fork failed: %d, %s\n", errno, strerror(errno));
-        return false;
-    }
+	int status_parent;
+	pid_t pid;
+	pid = fork();
+	if (pid == -1){ return false;}
+	else if (pid == 0){
+		int status_child;
+		status_child = execv(command[0], command);
+		if (status_child == -1)
+			exit(EXIT_FAILURE);
+	}
+	if (waitpid (pid, &status_parent, 0) == -1){
+		return false;}
+	else if (WIFEXITED (status_parent)){
+		int status = WEXITSTATUS(status_parent);
+		if (status != 0 ){ return false;}
+	}
+    va_end(args);
 
-    if (pid == 0) {
-        // child process
-        execv(command[0], command);
-        fprintf(stderr, "execv failed: %d, %s\n", errno, strerror(errno));
-        exit(-1);
-    } else {
-        int child_status = -1;
-        int ret = waitpid(pid, &child_status, 0);
-        if (ret == -1) {
-            fprintf(stderr, "wait failed: %d, %s\n", errno, strerror(errno));
-            return false;
-        }
-        return WEXITSTATUS(child_status) == 0;
-    }
-
-    return false;
+    return true;
 }
-
 /**
 * @param outputfile - The full path to the file to write with command output.
 *   This file will be closed at completion of the function call.
@@ -109,55 +111,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
-
-    va_end(args);
 
 /*
  * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a reference,
+ *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
  *   redirect standard out to a file specified by outputfile.
  *   The rest of the behaviour is same as do_exec()
  *
-*/
-    int ret = -1;
+*/	int status;
+	pid_t pid;
+	int fd = open(outputfile, O_CREAT|O_WRONLY|O_TRUNC, 0644);
+	if (fd < 0) { return false;}
+	switch(pid = fork()){
+		case -1: return false;
+		case 0: 
+			if (dup2(fd, 1) <0) {return false;}
+			close(fd);
+			status = execv(command[0], command);
+			if (status == -1)
+				exit(EXIT_FAILURE);
+		default:
+			close(fd);
+			if (waitpid (pid, &status, 0) == -1)
+				return false;
+		    	else if (WIFEXITED (status)){
+				int status_child = WEXITSTATUS(status);
+				if (status_child != 0) 
+					return false;
+			}
+	}
+	
+	va_end(args);
 
-    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
-
-    if (fd < 0) {
-        fprintf(stderr, "open failed: %d, %s\n", errno, strerror(errno));
-        return false;
-    }
-    
-    pid_t pid = fork();
-    if (pid == -1) {
-        fprintf(stderr, "fork failed: %d, %s\n", errno, strerror(errno));
-        close(fd);
-        return false;
-    }
-
-    if (pid == 0) {
-        // child process
-        ret = dup2(fd, 1);
-        if (ret == -1) {
-            fprintf(stderr, "dup2 failed: %d, %s\n", errno, strerror(errno));
-            exit(ret);
-        }
-        
-        execv(command[0], command);
-        
-        fprintf(stderr, "execv failed: %d, %s\n", errno, strerror(errno));
-        exit(-1);
-    } else {
-        int child_status = -1;
-        ret = waitpid(pid, &child_status, 0);
-        close(fd);
-        if (ret == -1) {
-            fprintf(stderr, "wait failed: %d, %s\n", errno, strerror(errno));
-            return false;
-        }
-        return WEXITSTATUS(child_status) == 0;
-    }
-
-    return false;
+    return true;
 }
